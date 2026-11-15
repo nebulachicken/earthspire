@@ -1,0 +1,9 @@
+{
+  "name": "cape-canaveral-sentinel-viewer",
+  "version-string": "0.2.0",
+  "dependencies": [
+    "curl",
+    "gdal",
+    "nlohmann-json"
+  ]
+}
