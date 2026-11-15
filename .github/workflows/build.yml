@@ -1,0 +1,51 @@
+name: Build .tns
+on:
+  push:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Checkout your code
+        uses: actions/checkout@v4
+
+      - name: Checkout Ndless
+        uses: actions/checkout@v4
+        with:
+          repository: ndless-nspire/Ndless
+          path: ndless
+          submodules: recursive
+
+      - name: Install dependencies
+        run: sudo apt-get update && sudo apt-get install -y libmpfr-dev libmpc-dev libboost-program-options-dev
+
+      - name: Cache toolchain
+        id: tc
+        uses: actions/cache@v4
+        with:
+          path: ndless/ndless-sdk/toolchain/install
+          key: toolchain-${{ hashFiles('ndless/ndless-sdk/toolchain/build_toolchain.sh') }}
+
+      - name: Build toolchain
+        if: steps.tc.outputs.cache-hit != 'true'
+        working-directory: ndless/ndless-sdk/toolchain
+        run: ./build_toolchain.sh
+
+      - name: Add to PATH
+        run: |
+          echo "$GITHUB_WORKSPACE/ndless/ndless-sdk/toolchain/install/bin" >> $GITHUB_PATH
+          echo "$GITHUB_WORKSPACE/ndless/ndless-sdk/bin" >> $GITHUB_PATH
+
+      - name: Build Ndless and SDK
+        working-directory: ndless
+        run: make
+
+      - name: Build calculator client
+        working-directory: calculator
+        run: make
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: capeviewer
+          path: calculator/*.prg.tns
