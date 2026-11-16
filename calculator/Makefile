@@ -1,14 +1,14 @@
 # Build the calculator client with the Ndless SDK on PATH
 # (nspire-gcc, nspire-ld, genzehn, make-prg).
 #
-#   make            -> capeviewer.prg.tns
+#   make            -> sentinelviewer.prg.tns
 #   make clean
 
-EXE      = capeviewer
+EXE      = sentinelviewer
 COMMON   = ../common
 CFLAGS   = -std=c99 -Wall -W -marm -I$(COMMON)
 OBJS     = main.o svd_format.o svd_render.o
-ZEHNFLAGS = --name "Cape Canaveral" --240x320-support true --uses-lcd-blit true
+ZEHNFLAGS = --name "Sentinel Viewer" --240x320-support true --uses-lcd-blit true
 
 all: $(EXE).prg.tns
 

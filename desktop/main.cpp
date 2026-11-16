@@ -1,4 +1,4 @@
-// SentinelFetch 0.4 - Sentinel-2 data for the calculator viewer.
+// SentinelFetch 0.4.2 - Sentinel-2 data for the calculator viewer.
 //
 //   SentinelFetch                 start the control panel (pick a place on a
 //                                 map, adjust colours, preview, save)
@@ -29,7 +29,7 @@ struct Options {
     int port = 8765;
     double lat = 28.4800;
     double lon = -80.5700;
-    std::string outPath = "capecanaveral.svd.tns";
+    std::string outPath = "sentinelviewer.svd.tns";
     std::string previewPath;
     double maxCloudPct = 10.0;
     int days = 120;
@@ -46,8 +46,8 @@ void PrintUsage() {
         "  --port N          control panel port, default 8765\n"
         "  --no-browser      do not open the browser automatically\n\n"
         "Command-line mode (used when any of these is given):\n"
-        "  --lat DEG --lon DEG   centre of the 3.2 x 2.4 km area (default Cape Canaveral)\n"
-        "  --out FILE        output file (default capecanaveral.svd.tns)\n"
+        "  --lat DEG --lon DEG   centre of the 3.2 x 2.4 km area (default starting position)\n"
+        "  --out FILE        output file (default sentinelviewer.svd.tns)\n"
         "  --max-cloud PCT   max cloud+shadow share of the area, default 10\n"
         "  --days N          look back N days, default 120\n"
         "  --allow-cloudy    if nothing meets --max-cloud, use the least cloudy scene\n"

@@ -1,0 +1,19 @@
+DOWNLOAD DEPENDENCIES:
+
+pacman -Syu
+
+pacman -S --needed \
+  mingw-w64-x86_64-toolchain \
+  mingw-w64-x86_64-cmake \
+  mingw-w64-x86_64-ninja \
+  mingw-w64-x86_64-curl \
+  mingw-w64-x86_64-gdal \
+  mingw-w64-x86_64-nlohmann-json
+
+BUILD:
+cd path to project
+example: cd /c/Users/user/Desktop/project
+
+cmake -S . -B build -G Ninja
+cmake --build build
+./build/desktop/SentinelFetch.exe

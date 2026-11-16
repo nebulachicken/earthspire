@@ -67,8 +67,8 @@ private:
 struct UiOptions {
     int port = 8765;
     bool openBrowser = true;
-    std::string outPath = "capecanaveral.svd.tns";
-    double lat = 28.4800;     // initial map centre (Cape Canaveral)
+    std::string outPath = "sentinelviewer.svd.tns";
+    double lat = 28.4800;     // initial map centre
     double lon = -80.5700;
 };
 

@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.21)
-project(CapeCanaveralSentinel VERSION 0.4.0 LANGUAGES C CXX)
+project(SentinelViewer VERSION 0.4.2 LANGUAGES C CXX)
 
 set(CMAKE_C_STANDARD 99)
 set(CMAKE_C_STANDARD_REQUIRED ON)

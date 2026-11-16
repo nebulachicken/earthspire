@@ -1,6 +1,6 @@
 {
-  "name": "cape-canaveral-sentinel-viewer",
-  "version-string": "0.2.0",
+  "name": "sentinel-viewer",
+  "version-string": "0.4.2",
   "dependencies": [
     "curl",
     "gdal",

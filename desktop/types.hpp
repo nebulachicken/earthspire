@@ -18,8 +18,7 @@ struct BBox {
 };
 
 // 3.2 km x 2.4 km window centred on (lat, lon). The longitude span is widened
-// by 1/cos(lat) so the box is 4:3 on the ground, like the original Cape
-// Canaveral window.
+// by 1/cos(lat) so the box is 4:3 on the ground, like the original base window.
 inline BBox MakeBBox(double lat, double lon) {
     const double kPi = 3.14159265358979323846;
     double c = std::cos(lat * kPi / 180.0);

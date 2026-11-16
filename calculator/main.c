@@ -1,4 +1,4 @@
-/* Cape Canaveral Sentinel viewer - TI-Nspire CX II (Ndless) client.
+/* Sentinel Viewer - TI-Nspire CX II (Ndless) client.
  *
  * SVD2 files contain a compressed image pyramid. Multiply zooms in; divide
  * zooms out. Plus/minus adjust brightness, C toggles the cloud overlay,
@@ -9,6 +9,7 @@
 
 #include <stdint.h>
 #include <stdio.h>
+#include <ctype.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -31,29 +32,197 @@ typedef struct viewer_data {
     size_t raw_capacity;
 } viewer_data;
 
-/* Ndless fopen() takes the on-calculator filename including the .tns suffix. */
-static const char *const kPaths[] = {
-    "/documents/capecanaveral.svd.tns",
-    "/documents/ndless/capecanaveral.svd.tns",
-    "/ndless/capecanaveral.svd.tns",
-    "/capecanaveral.svd.tns",
-    NULL
-};
+#define SVD_PATH_CAP 256
+#define MAX_SVD_FILES 1024
+#define FILES_PER_PAGE 8
+#define PICKER_TEXT_CAP 640
+
+typedef struct svd_file_list {
+    char (*paths)[SVD_PATH_CAP];
+    unsigned count;
+    unsigned capacity;
+    int skipped;
+} svd_file_list;
 
 static void fail(const char *msg) {
-    show_msgbox("Cape Canaveral viewer", msg);
+    show_msgbox("Sentinel Viewer", msg);
 }
 
-static FILE *open_data(const char **used) {
-    int i;
-    for (i = 0; kPaths[i]; ++i) {
-        FILE *f = fopen(kPaths[i], "rb");
-        if (f) {
-            *used = kPaths[i];
-            return f;
+static int ends_with_case_insensitive(const char *text, const char *suffix) {
+    size_t text_len, suffix_len, i;
+    if (!text || !suffix) return 0;
+    text_len = strlen(text);
+    suffix_len = strlen(suffix);
+    if (text_len < suffix_len) return 0;
+    text += text_len - suffix_len;
+    for (i = 0; i < suffix_len; ++i) {
+        if (tolower((unsigned char)text[i]) !=
+            tolower((unsigned char)suffix[i])) return 0;
+    }
+    return 1;
+}
+
+/* TI-Nspire transfers commonly append .tns to data files. Accept either form. */
+static int has_svd_extension(const char *path) {
+    return ends_with_case_insensitive(path, ".svd") ||
+           ends_with_case_insensitive(path, ".svd.tns");
+}
+
+static const char *file_basename(const char *path) {
+    const char *slash, *backslash;
+    if (!path) return "";
+    slash = strrchr(path, '/');
+    backslash = strrchr(path, '\\');
+    if (backslash && (!slash || backslash > slash)) slash = backslash;
+    return slash ? slash + 1 : path;
+}
+
+/* Only offer files which have a supported SVD header, not merely the suffix. */
+static int collect_svd_file(const char *path, void *context) {
+    svd_file_list *list = (svd_file_list *)context;
+    FILE *f;
+    uint8_t magic[4];
+    size_t got;
+
+    if (!list || !path || !has_svd_extension(path)) return 0;
+
+    f = fopen(path, "rb");
+    if (!f) return 0;
+    got = fread(magic, 1, sizeof magic, f);
+    fclose(f);
+    if (got != sizeof magic ||
+        (memcmp(magic, "SVD1", 4) != 0 && memcmp(magic, "SVD2", 4) != 0))
+        return 0;
+
+    if (strlen(path) >= SVD_PATH_CAP) {
+        list->skipped = 1;
+        return 0;
+    }
+    if (list->count >= MAX_SVD_FILES) {
+        list->skipped = 1;
+        return 0;
+    }
+    if (list->count == list->capacity) {
+        unsigned new_capacity = list->capacity ? list->capacity * 2u : 8u;
+        char (*new_paths)[SVD_PATH_CAP];
+        if (new_capacity < list->capacity || new_capacity > MAX_SVD_FILES) {
+            list->skipped = 1;
+            return 0;
+        }
+        new_paths = (char (*)[SVD_PATH_CAP])realloc(
+            list->paths, (size_t)new_capacity * sizeof(*list->paths));
+        if (!new_paths) {
+            list->skipped = 1;
+            return 0;
+        }
+        list->paths = new_paths;
+        list->capacity = new_capacity;
+    }
+    strcpy(list->paths[list->count++], path);
+    return 0; /* Continue scanning the directory. */
+}
+
+static int compare_paths(const void *left, const void *right) {
+    const char *a = file_basename((const char *)left);
+    const char *b = file_basename((const char *)right);
+    while (*a && *b) {
+        int ca = tolower((unsigned char)*a++);
+        int cb = tolower((unsigned char)*b++);
+        if (ca != cb) return ca - cb;
+    }
+    return (unsigned char)*a - (unsigned char)*b;
+}
+
+static int choose_svd_file(char *selected_path, size_t selected_path_size) {
+    svd_file_list files;
+    unsigned page_count, page = 0, page_items, i;
+    int choice = 1;
+    char message[PICKER_TEXT_CAP];
+    char subtitle[128];
+    size_t used;
+
+    memset(&files, 0, sizeof files);
+    /* enable_relative_paths(argv) is called by main before this scan. */
+    (void)file_each(".", collect_svd_file, &files);
+
+    if (files.count == 0) {
+        free(files.paths);
+        fail("No supported .svd files were found beside the calculator program.\n\nTransfer one or more .svd.tns files into the same folder as Sentinel Viewer.");
+        return 0;
+    }
+
+    qsort(files.paths, files.count, sizeof files.paths[0], compare_paths);
+    page_count = (files.count + FILES_PER_PAGE - 1u) / FILES_PER_PAGE;
+
+    if (page_count > 1u) {
+        int selected_page = 1;
+        char page_message[160];
+        snprintf(page_message, sizeof page_message,
+                 "Found %u supported files. The picker shows %u files per page.\n\nChoose a page number to continue.",
+                 files.count, FILES_PER_PAGE);
+        if (!show_1numeric_input("Choose file page", "SVD files in this folder",
+                                 page_message, &selected_page, 1,
+                                 (int)page_count)) {
+            free(files.paths);
+            return 0;
+        }
+        if (selected_page < 1 || (unsigned)selected_page > page_count) {
+            free(files.paths);
+            fail("That page selection is not valid.");
+            return 0;
+        }
+        page = (unsigned)(selected_page - 1);
+    }
+
+    page_items = files.count - page * FILES_PER_PAGE;
+    if (page_items > FILES_PER_PAGE) page_items = FILES_PER_PAGE;
+
+    used = 0;
+    message[0] = '\0';
+    for (i = 0; i < page_items; ++i) {
+        const char *name = file_basename(files.paths[page * FILES_PER_PAGE + i]);
+        char line[96];
+        int n;
+        n = snprintf(line, sizeof line, "%u. %.56s\n", i + 1u, name);
+        if (n < 0 || (size_t)n >= sizeof line || used + (size_t)n >= sizeof message)
+            break;
+        memcpy(message + used, line, (size_t)n + 1u);
+        used += (size_t)n;
+    }
+    if (files.skipped) {
+        const char note[] = "\n(Some files were skipped: list limit, long path, or low memory.)";
+        size_t note_len = sizeof note - 1u;
+        if (used + note_len < sizeof message) {
+            memcpy(message + used, note, note_len + 1u);
+            used += note_len;
         }
     }
-    return NULL;
+
+    snprintf(subtitle, sizeof subtitle,
+             "Page %u of %u - enter a file number",
+             page + 1u, page_count);
+    choice = 1;
+    if (!show_1numeric_input("Select satellite image", subtitle,
+                             message, &choice, 1, (int)page_items)) {
+        free(files.paths);
+        return 0;
+    }
+
+    if ((unsigned)choice < 1u || (unsigned)choice > page_items) {
+        free(files.paths);
+        fail("That file selection is not valid.");
+        return 0;
+    }
+    if (strlen(files.paths[page * FILES_PER_PAGE + (unsigned)choice - 1u]) >=
+        selected_path_size) {
+        free(files.paths);
+        fail("The selected filename is too long.");
+        return 0;
+    }
+    strcpy(selected_path,
+           files.paths[page * FILES_PER_PAGE + (unsigned)choice - 1u]);
+    free(files.paths);
+    return 1;
 }
 
 static void close_data(viewer_data *data) {
@@ -65,14 +234,13 @@ static void close_data(viewer_data *data) {
 }
 
 /* Load metadata. For SVD2 the compressed level data is read only when selected. */
-static int load(viewer_data *data) {
+static int load(viewer_data *data, const char *path) {
     uint8_t magic[4];
-    const char *used = NULL;
-    FILE *f = open_data(&used);
+    FILE *f = fopen(path, "rb");
     unsigned i;
     memset(data, 0, sizeof *data);
     if (!f) {
-        fail("capecanaveral.svd.tns not found.\nSend it to My Documents first.");
+        fail("Could not open the selected SVD file. Check that it is still in the program folder.");
         return 0;
     }
     if (fread(magic, 1, sizeof magic, f) != sizeof magic || fseek(f, 0, SEEK_SET) != 0) {
@@ -124,7 +292,6 @@ static int load(viewer_data *data) {
             return 0;
         }
         data->version = 1;
-        (void)used;
         return 1;
     }
 
@@ -166,7 +333,6 @@ static int load(viewer_data *data) {
         }
         data->file = f;
         data->version = 2;
-        (void)used;
         return 1;
     }
 
@@ -257,16 +423,23 @@ static void draw(const uint16_t *img) {
     lcd_blit((void *)img, SCR_320x240_565);
 }
 
-int main(void) {
+int main(int argc, char **argv) {
     viewer_data data;
     svd_render_opts opts;
     uint16_t *img;
     unsigned current_level = 0;
     int running = 1;
     const char *error = NULL;
+    char selected_path[SVD_PATH_CAP];
 
+    (void)argc;
     assert_ndless_rev(2016); /* CX II support */
-    if (!load(&data)) return 0;
+    if (enable_relative_paths(argv) != 0) {
+        fail("Could not determine the calculator program folder.");
+        return 0;
+    }
+    if (!choose_svd_file(selected_path, sizeof selected_path)) return 0;
+    if (!load(&data, selected_path)) return 0;
 
     img = (uint16_t *)malloc(IMG_W * IMG_H * sizeof(uint16_t));
     if (!img) {

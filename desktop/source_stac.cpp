@@ -84,7 +84,7 @@ std::string HttpPostJson(const std::string& url, const json& body) {
     curl_easy_setopt(curl, CURLOPT_POSTFIELDSIZE, static_cast<long>(request.size()));
     curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, CurlWrite);
     curl_easy_setopt(curl, CURLOPT_WRITEDATA, &response);
-    curl_easy_setopt(curl, CURLOPT_USERAGENT, "CapeCanaveralSentinelFetch/0.4");
+    curl_easy_setopt(curl, CURLOPT_USERAGENT, "SentinelViewer/0.4.2");
     curl_easy_setopt(curl, CURLOPT_FOLLOWLOCATION, 1L);
     curl_easy_setopt(curl, CURLOPT_CONNECTTIMEOUT, 30L);
     curl_easy_setopt(curl, CURLOPT_TIMEOUT, 90L);
