@@ -1,4 +1,4 @@
-/* Host tests for the shared SVD1 code. Build: see tests/run.sh */
+/* Host tests for the shared SVD container/render code. Build: see tests/run.sh */
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -203,11 +203,130 @@ static void test_no_scl(void) {
     free(p);
 }
 
+
+static void test_lzss_and_pyramid(void) {
+    const size_t n = 12000;
+    uint8_t *source = (uint8_t *)malloc(n);
+    uint8_t *compressed = (uint8_t *)malloc(svd_lzss_compress_bound(n));
+    uint8_t *decoded = (uint8_t *)malloc(n);
+    size_t written = 0;
+    svd_pyramid_info info, parsed;
+    uint8_t header[SVD2_HEADER_SIZE];
+    const size_t px = W * H;
+    const size_t raw_len = svd_pyramid_raw_size(W, H);
+    uint8_t *raw = (uint8_t *)calloc(1, raw_len);
+    uint8_t *packed = (uint8_t *)malloc(svd_lzss_compress_bound(raw_len));
+    uint8_t *roundtrip = (uint8_t *)malloc(raw_len);
+    uint16_t img[W * H];
+    svd_render_opts opts;
+    unsigned i;
+    int rc;
+
+    CHECK(source && compressed && decoded && raw && packed && roundtrip);
+    for (i = 0; i < n; ++i) source[i] = (uint8_t)((i % 97u) < 80u ? (i % 7u) : (i * 13u));
+    rc = svd_lzss_compress(source, n, compressed, svd_lzss_compress_bound(n), &written);
+    CHECK(rc == SVD_OK && written > 0 && written <= svd_lzss_compress_bound(n));
+    CHECK(svd_lzss_decompress(compressed, written, decoded, n) == SVD_OK);
+    CHECK(memcmp(source, decoded, n) == 0);
+    CHECK(svd_lzss_decompress(compressed, written - 1, decoded, n) != SVD_OK);
+
+    /* A small RGB565 image payload with a packed classification mask. */
+    for (i = 0; i < px; ++i) {
+        const uint16_t color = (uint16_t)(0x1000u + (i % 256u));
+        svd_put_u16(raw + i * 2u, color);
+    }
+    /* Pixel 0 is no-data, pixel 1 shadow, pixel 2 cloud, pixel 3 normal. */
+    raw[px * 2u] = (uint8_t)(1u | (2u << 2) | (3u << 4));
+    memset(&info, 0, sizeof info);
+    info.width = W; info.height = H; info.level_count = SVD_MAX_LEVELS;
+    info.cloud_permille = 20; info.nodata_permille = 0;
+    strcpy(info.acquired, "2026-11-15T16:00:00Z");
+    strcpy(info.scene_id, "SVD2_TEST");
+    for (i = 0; i < SVD_MAX_LEVELS; ++i) {
+        info.levels[i].resolution_m = (uint16_t)(10u << i);
+        info.levels[i].raw_size = (uint32_t)raw_len;
+        info.levels[i].raw_crc32 = svd_crc32(0, raw, raw_len);
+        rc = svd_lzss_compress(raw, raw_len, packed, svd_lzss_compress_bound(raw_len), &written);
+        CHECK(rc == SVD_OK);
+        if (written < raw_len) {
+            info.levels[i].codec = SVD_CODEC_LZSS;
+            info.levels[i].stored_size = (uint32_t)written;
+        } else {
+            info.levels[i].codec = SVD_CODEC_RAW;
+            info.levels[i].stored_size = (uint32_t)raw_len;
+        }
+    }
+    svd_pyramid_header_write(&info, header);
+    CHECK(svd_pyramid_header_parse(header, &parsed) == SVD_OK);
+    CHECK(parsed.level_count == SVD_MAX_LEVELS);
+    CHECK(parsed.levels[4].resolution_m == 160);
+
+    /* Exercise the lossless horizontal XOR filter used for image compression. */
+    {
+        uint8_t *filtered = (uint8_t *)malloc(raw_len);
+        CHECK(filtered != NULL);
+        memcpy(filtered, raw, raw_len);
+        for (uint32_t y = 0; y < H; ++y) {
+            for (uint32_t x = W; x-- > 1;) {
+                const size_t at = (size_t)y * W + x;
+                const uint16_t current = svd_get_u16(raw + at * 2u);
+                const uint16_t left = svd_get_u16(raw + (at - 1u) * 2u);
+                svd_put_u16(filtered + at * 2u, (uint16_t)(current ^ left));
+            }
+        }
+        CHECK(svd_lzss_compress(filtered, raw_len, packed,
+                                svd_lzss_compress_bound(raw_len), &written) == SVD_OK);
+        info.levels[0].codec = SVD_CODEC_LZSS_XOR;
+        info.levels[0].stored_size = (uint32_t)written;
+        svd_pyramid_header_write(&info, header);
+        CHECK(svd_pyramid_header_parse(header, &parsed) == SVD_OK);
+        CHECK(svd_pyramid_level_decode(&parsed, 0, packed, written, roundtrip, raw_len) == SVD_OK);
+        CHECK(memcmp(raw, roundtrip, raw_len) == 0);
+        free(filtered);
+    }
+
+    for (i = 1; i < SVD_MAX_LEVELS; ++i) {
+        size_t stored_len;
+        if (info.levels[i].codec == SVD_CODEC_LZSS) {
+            stored_len = info.levels[i].stored_size;
+            CHECK(svd_lzss_compress(raw, raw_len, packed, svd_lzss_compress_bound(raw_len), &written) == SVD_OK);
+            CHECK(written == stored_len);
+        } else {
+            stored_len = raw_len;
+            memcpy(packed, raw, raw_len);
+        }
+        CHECK(svd_pyramid_level_decode(&parsed, i, packed, stored_len, roundtrip, raw_len) == SVD_OK);
+        CHECK(memcmp(raw, roundtrip, raw_len) == 0);
+    }
+
+    svd_render_defaults(&opts);
+    /* Restore a direct image with primary colours to validate mask rendering. */
+    svd_put_u16(raw + 0, 0xF800); /* red, no-data -> black */
+    svd_put_u16(raw + 2, 0x07E0); /* green, shadow */
+    svd_put_u16(raw + 4, 0x001F); /* blue, cloud */
+    svd_put_u16(raw + 6, 0xFFFF); /* white, normal */
+    info.levels[0].raw_crc32 = svd_crc32(0, raw, raw_len);
+    CHECK(svd_pyramid_render_rgb565(&info, raw, 0, &opts, img) == SVD_OK);
+    CHECK(img[0] == 0);
+    CHECK(img[3] == 0xFFFF);
+    opts.show_clouds = 1;
+    CHECK(svd_pyramid_render_rgb565(&info, raw, 0, &opts, img) == SVD_OK);
+    CHECK(img[1] != 0x07E0);
+    CHECK(img[2] != 0x001F);
+
+    /* Header checksum and level metadata are covered by the header CRC. */
+    header[112] ^= 1u;
+    CHECK(svd_pyramid_header_parse(header, &parsed) == SVD_ERR_HEADER_CRC);
+
+    free(source); free(compressed); free(decoded); free(raw); free(packed); free(roundtrip);
+}
+
 int main(void) {
     test_crc();
     test_tone();
     test_roundtrip_and_corruption();
     test_no_scl();
+    test_lzss_and_pyramid();
     if (g_fail) { printf("%d check(s) FAILED\n", g_fail); return 1; }
     printf("all checks passed\n");
     return 0;

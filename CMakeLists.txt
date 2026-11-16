@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.21)
-project(CapeCanaveralSentinel VERSION 0.2.0 LANGUAGES C CXX)
+project(CapeCanaveralSentinel VERSION 0.4.0 LANGUAGES C CXX)
 
 set(CMAKE_C_STANDARD 99)
 set(CMAKE_C_STANDARD_REQUIRED ON)
@@ -7,16 +7,20 @@ set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
-option(SVD_BUILD_DESKTOP "Build the desktop downloader (needs curl, GDAL, nlohmann-json)" ON)
-option(SVD_BUILD_TESTS   "Build the host-side tests" OFF)
+if(NOT CMAKE_BUILD_TYPE AND NOT CMAKE_CONFIGURATION_TYPES)
+    set(CMAKE_BUILD_TYPE Release CACHE STRING "Build type" FORCE)
+endif()
 
-# Shared, portable container + renderer (also compiled by the calculator Makefile).
+option(SVD_BUILD_DESKTOP  "Build the desktop app (needs curl, GDAL, nlohmann-json)" ON)
+option(SVD_BUILD_TESTS    "Build the host-side tests" OFF)
+option(SVD_STATIC_RUNTIME "MinGW only: link libgcc/libstdc++ statically" OFF)
+
+# Shared, portable container + renderer (the calculator Makefile compiles the
+# same files). Plain C99, standard library only.
 add_library(svd STATIC common/svd_format.c common/svd_render.c)
 target_include_directories(svd PUBLIC common)
 
 if(SVD_BUILD_DESKTOP)
-    # The manifest (vcpkg.json) lives in this top-level directory, so vcpkg's
-    # manifest mode picks it up when the toolchain file is passed.
     add_subdirectory(desktop)
 endif()
 

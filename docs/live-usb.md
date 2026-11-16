@@ -10,7 +10,8 @@
    receiver code in ScreenMirror's `calc/` folder could not be read from the environment used to
    write this prototype, so no calculator-side USB code was written blind.
 
-What is already transport-independent: the SVD1 container with its CRC32s. A future live link
-can send the same bytes (header, then payload in chunks) and reuse `svd_header_parse`,
-`svd_payload_verify` and `svd_render_rgb565` unchanged. Only a new "source" in
-`calculator/main.c` (replacing `load()`) and a server on the PC would be needed.
+What is already transport-independent: the SVD1 and SVD2 containers with their CRC32s. A future
+live link can send the same bytes (header, then level payloads in chunks) and reuse
+`svd_pyramid_header_parse`, `svd_pyramid_level_decode` and `svd_pyramid_render_rgb565`. Legacy
+SVD1 files still use `svd_header_parse`, `svd_payload_verify` and `svd_render_rgb565`. A future USB
+source would need to stream the SVD2 header and level data to the calculator, plus a server on the PC.

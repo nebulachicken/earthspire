@@ -6,7 +6,7 @@
 
 EXE      = capeviewer
 COMMON   = ../common
-CFLAGS   = -Wall -W -marm -I$(COMMON)
+CFLAGS   = -std=c99 -Wall -W -marm -I$(COMMON)
 OBJS     = main.o svd_format.o svd_render.o
 ZEHNFLAGS = --name "Cape Canaveral" --240x320-support true --uses-lcd-blit true
 

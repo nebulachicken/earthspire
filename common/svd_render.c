@@ -97,3 +97,50 @@ int svd_render_rgb565(const svd_info *info, const uint8_t *payload,
     free(lut);
     return SVD_OK;
 }
+
+
+int svd_pyramid_render_rgb565(const svd_pyramid_info *info,
+                              const uint8_t *raw_payload, unsigned level,
+                              const svd_render_opts *opts, uint16_t *out) {
+    size_t px, i;
+    const uint8_t *mask;
+    int gain, clouds;
+    uint32_t scale_q8;
+    if (!info || !raw_payload || !out || level >= info->level_count ||
+        info->width == 0 || info->height == 0) return SVD_ERR_GEOMETRY;
+
+    px = (size_t)info->width * info->height;
+    mask = raw_payload + px * 2u;
+    gain = opts ? clamp_gain(opts->gain_q8) : SVD_GAIN_DEFAULT;
+    clouds = opts ? opts->show_clouds : 0;
+    /* Original renderer applies gain before its square-root tone curve. The
+     * pre-rendered image therefore uses sqrt(gain) to preserve that feel. */
+    scale_q8 = isqrt32((uint32_t)gain * 256u);
+
+    for (i = 0; i < px; ++i) {
+        const unsigned packed = (unsigned)mask[i >> 2];
+        const unsigned cls = (packed >> ((i & 3u) * 2u)) & 3u;
+        const unsigned v = svd_get_u16(raw_payload + i * 2u);
+        unsigned r = (((v >> 11) & 31u) << 3) | (((v >> 11) & 31u) >> 2);
+        unsigned g = (((v >> 5) & 63u) << 2) | (((v >> 5) & 63u) >> 4);
+        unsigned b = ((v & 31u) << 3) | ((v & 31u) >> 2);
+
+        if (cls == 1u) {
+            r = g = b = 0;
+        } else {
+            r = (r * scale_q8 + 128u) >> 8;
+            g = (g * scale_q8 + 128u) >> 8;
+            b = (b * scale_q8 + 128u) >> 8;
+            if (r > 255u) r = 255u;
+            if (g > 255u) g = 255u;
+            if (b > 255u) b = 255u;
+            if (clouds && cls == 3u) {
+                r = (r + 255u) / 2u; g = (g + 64u) / 2u; b = (b + 255u) / 2u;
+            } else if (clouds && cls == 2u) {
+                r = r / 2u; g = (g + 160u) / 2u; b = (b + 255u) / 2u;
+            }
+        }
+        out[i] = pack565(r, g, b);
+    }
+    return SVD_OK;
+}
